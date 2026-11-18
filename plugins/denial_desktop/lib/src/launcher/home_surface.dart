@@ -21,6 +21,7 @@ import 'home_launch.dart';
 import 'home_pager.dart';
 import 'home_resize_controller.dart';
 import 'widgets/home_app_drawer.dart';
+import 'widgets/home_app_menu.dart';
 import 'widgets/home_backdrop.dart';
 import 'widgets/home_drag_layer.dart';
 import 'widgets/home_folder_panel.dart';
@@ -81,6 +82,13 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   /// A widget whose long press opened its resize frame; moving the finger
   /// on lifts it instead.
   ({HomeGridItem item, int index, Rect rect, Offset start})? _heldWidget;
+
+  /// The app a finger is holding without having moved it: lifting the finger
+  /// there opens its menu instead of dropping it.
+  ({HomeGridItem item, Offset start})? _heldApp;
+
+  /// The open app menu, or null.
+  ({String title, List<HomeAppMenuEntry> entries})? _appMenu;
 
   /// The press that dismissed a resize frame does nothing else.
   bool _swallowTap = false;
@@ -145,6 +153,8 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   void _cancelInteraction() {
     _pointer = null;
     _heldWidget = null;
+    _heldApp = null;
+    _appMenu = null;
     _taps.reset();
     _backgroundHold?.cancel();
     _drawerDragging = false;
@@ -278,6 +288,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       return;
     }
     resize.exit();
+    _heldApp = item.app == null ? null : (item: item, start: pointer);
     drag.start(
       item: item,
       source: index,
@@ -326,6 +337,11 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     if ((event.position - _holdStart).distance > _holdSlop) {
       _backgroundHold?.cancel();
     }
+    final heldApp = _heldApp;
+    if (heldApp != null &&
+        (event.position - heldApp.start).distance > _holdSlop) {
+      _heldApp = null;
+    }
     final held = _heldWidget;
     if (held != null &&
         !drag.active &&
@@ -348,15 +364,91 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     _pointer = null;
     _heldWidget = null;
     _backgroundHold?.cancel();
+    final heldApp = _heldApp;
+    _heldApp = null;
     if (drag.active) {
-      drag.move(event.position);
-      drag.end(cancelled: event is PointerCancelEvent);
+      if (heldApp != null && event is PointerUpEvent) {
+        // Lifted where it was lifted: the tile goes back and its menu opens.
+        drag.end(cancelled: true);
+        _openAppMenu(heldApp.item);
+      } else {
+        drag.move(event.position);
+        drag.end(cancelled: event is PointerCancelEvent);
+      }
     }
     if (event is PointerUpEvent) {
       _taps.up(event);
     } else {
       _taps.reset();
     }
+  }
+
+  // App menu -----------------------------------------------------------------
+
+  /// Opens the menu of [item]: its desktop actions, then Terminate when it is
+  /// running and Uninstall when a package owns it.
+  Future<void> _openAppMenu(HomeGridItem item) async {
+    final app = item.app;
+    if (app == null) return;
+    ref.read(hapticsServiceProvider).pulse();
+    final l10n = context.l10n;
+    final launcher = ref.read(appLauncherProvider);
+    final packages = ref.read(appPackageServiceProvider);
+    final shell = ref.read(referenceShellProvider);
+    final entries = <HomeAppMenuEntry>[];
+    var removes = false;
+    for (final action in app.actions) {
+      final uninstall = action.id.toLowerCase() == 'uninstall';
+      removes = removes || uninstall;
+      entries.add(
+        HomeAppMenuEntry(
+          label: action.name,
+          icon: uninstall
+              ? Icons.delete_outline_rounded
+              : action.id.toLowerCase() == 'information'
+              ? Icons.info_outline_rounded
+              : Icons.bolt_rounded,
+          destructive: uninstall,
+          confirmation: uninstall
+              ? l10n.homeAppMenuUninstallPrompt(app.name)
+              : null,
+          onSelected: () => launcher.launchAction(app, action),
+        ),
+      );
+    }
+    if (app.terminable &&
+        launcher.findOpenWindow(app, shell.openAppWindows) != null) {
+      entries.add(
+        HomeAppMenuEntry(
+          label: l10n.homeAppMenuTerminate,
+          icon: Icons.stop_circle_outlined,
+          destructive: true,
+          confirmation: l10n.homeAppMenuTerminatePrompt(app.name),
+          onSelected: () => launcher.terminate(app),
+        ),
+      );
+    }
+    if (!removes) {
+      final package = await packages.owningPackage(app.desktopPath);
+      if (package != null && packages.isRemovable(package)) {
+        entries.add(
+          HomeAppMenuEntry(
+            label: l10n.homeAppMenuUninstall,
+            icon: Icons.delete_outline_rounded,
+            destructive: true,
+            confirmation: l10n.homeAppMenuUninstallPrompt(app.name),
+            onSelected: () =>
+                launcher.runCommand(app, packages.uninstallCommand(package)),
+          ),
+        );
+      }
+    }
+    if (!mounted || entries.isEmpty) return;
+    setState(() => _appMenu = (title: app.name, entries: entries));
+  }
+
+  void _closeAppMenu() {
+    if (_appMenu != null) setState(() => _appMenu = null);
   }
 
   bool _onItem(Offset global) {
@@ -693,6 +785,13 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                         )
                       : const SizedBox.shrink(),
                 ),
+                if (_appMenu != null)
+                  HomeAppMenu(
+                    key: const ValueKey('home-app-menu'),
+                    title: _appMenu!.title,
+                    entries: _appMenu!.entries,
+                    onDismiss: _closeAppMenu,
+                  ),
               ],
             ),
           ),

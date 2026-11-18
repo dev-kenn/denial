@@ -10,7 +10,7 @@ use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
@@ -40,6 +40,10 @@ const LOGOUT: u8 = 3;
 const SCREENSHOT_PREPARED: u8 = 4;
 const CANCEL_SCREENSHOT: u8 = 5;
 const RESTART: u8 = 6;
+const TERMINATE_APPLICATION: u8 = 7;
+/// How long a terminated application may take to exit before its process group
+/// is killed.
+const TERMINATE_GRACE: Duration = Duration::from_secs(3);
 
 // Never pass connection selectors inherited from a parent/nested compositor
 // to applications. WAYLAND_DISPLAY is installed explicitly below; all other
@@ -107,6 +111,10 @@ enum Request {
     CancelScreenshot(NonZeroU64),
     Logout,
     Restart,
+    /// End the applications the shell started with this desktop-file ID.
+    TerminateApplication {
+        desktop_file_id: String,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -327,6 +335,13 @@ impl SystemCommandHandler {
             Request::Restart => {
                 self.restart_requested = true;
                 info!("Flutter shell requested a Denial restart");
+            }
+            Request::TerminateApplication { desktop_file_id } => {
+                let signalled = terminate_application(&desktop_file_id);
+                info!(
+                    desktop_file_id,
+                    signalled, "Flutter shell requested an application be terminated"
+                );
             }
             Request::Screenshot(request) => {
                 self.screenshot_requested = Some(request);
@@ -630,6 +645,22 @@ fn decode(packet: &[u8]) -> Result<Request, DecodeError> {
             }
             Ok(Request::Restart)
         }
+        TERMINATE_APPLICATION => {
+            if request_id != 0 {
+                return Err(DecodeError::UnexpectedLaunchMetadata);
+            }
+            let mut arguments = arguments.into_iter();
+            let desktop_file_id = arguments
+                .next()
+                .ok_or(DecodeError::DesktopLaunchHasNoIdentity)?;
+            if arguments.next().is_some() {
+                return Err(DecodeError::UnexpectedLaunchMetadata);
+            }
+            if validate_desktop_file_id(&desktop_file_id).is_err() {
+                return Err(DecodeError::InvalidDesktopFileId);
+            }
+            Ok(Request::TerminateApplication { desktop_file_id })
+        }
         SCREENSHOT_PREPARED | CANCEL_SCREENSHOT => {
             if !arguments.is_empty() {
                 return Err(DecodeError::ScreenshotArgumentCount(arguments.len()));
@@ -703,6 +734,7 @@ fn launch_application(
                 None
             }
         });
+    let desktop_file_id = launch.desktop_file_id.map(str::to_owned);
     let mut command = application_command(
         launch,
         session,
@@ -711,6 +743,14 @@ fn launch_application(
     );
     let child = command.spawn().map_err(DispatchError::Spawn)?;
     let pid = child.id();
+    // Registered before the reaper can see the child, so its exit always
+    // finds the entry to remove.
+    if let Some(desktop_file_id) = desktop_file_id {
+        RUNNING_APPLICATIONS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((desktop_file_id, pid));
+    }
     let mut tracked = TrackedChild {
         child,
         _permit: permit,
@@ -740,10 +780,12 @@ fn launch_application(
             }
         },
         Err(error) => {
+            forget_running_application(pid);
             let _ = terminate_and_reap(&mut tracked.child);
             return Err(DispatchError::Reaper(error));
         }
     }
+    forget_running_application(pid);
     let _ = terminate_and_reap(&mut tracked.child);
     Err(DispatchError::Reaper(io::Error::new(
         io::ErrorKind::BrokenPipe,
@@ -1010,6 +1052,61 @@ fn invalidate_reaper_sender(generation: u64) {
     slot.invalidate(generation);
 }
 
+/// Applications the shell started with a desktop-file ID that have not exited,
+/// as (ID, process group). The reaper removes an entry when it reaps the
+/// child, so an entry's group leader is never a reused PID.
+static RUNNING_APPLICATIONS: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+
+fn forget_running_application(pid: u32) {
+    RUNNING_APPLICATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|(_, group)| *group != pid);
+}
+
+fn signal_process_group(group: u32, signal: libc::c_int) {
+    if let Ok(group) = i32::try_from(group)
+        && group > 1
+    {
+        // SAFETY: application_command created a fresh process group whose ID
+        // is the child PID. A negative kill target addresses that group only.
+        // The group's leader is still tracked, or its descendants keep the ID
+        // reserved; a group that no longer exists answers ESRCH.
+        unsafe { libc::kill(-group, signal) };
+    }
+}
+
+/// Asks every running application started with `desktop_file_id` to exit
+/// (SIGTERM to its process group), then kills the group if it is still
+/// tracked after [`TERMINATE_GRACE`]. Returns how many groups were signalled.
+fn terminate_application(desktop_file_id: &str) -> usize {
+    let groups = RUNNING_APPLICATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .filter(|(id, _)| id == desktop_file_id)
+        .map(|(_, group)| *group)
+        .collect::<Vec<_>>();
+    for group in &groups {
+        signal_process_group(*group, libc::SIGTERM);
+    }
+    let signalled = groups.len();
+    if signalled > 0 {
+        thread::spawn(move || {
+            thread::sleep(TERMINATE_GRACE);
+            let running = RUNNING_APPLICATIONS
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            for group in groups {
+                if running.iter().any(|(_, tracked)| *tracked == group) {
+                    signal_process_group(group, libc::SIGKILL);
+                }
+            }
+        });
+    }
+    signalled
+}
+
 fn terminate_and_reap(child: &mut Child) -> bool {
     if let Err(error) = terminate_application_group(child)
         && error.kind() != io::ErrorKind::InvalidInput
@@ -1070,6 +1167,7 @@ fn reap_children(receiver: Receiver<TrackedChild>, arrivals: &OwnedFd) {
             .retain_mut(|tracked| match tracked.child.try_wait() {
                 Ok(Some(status)) => {
                     tracked.reaped = true;
+                    forget_running_application(tracked.child.id());
                     debug!(pid = tracked.child.id(), %status, "application process exited");
                     false
                 }
@@ -1078,6 +1176,7 @@ fn reap_children(receiver: Receiver<TrackedChild>, arrivals: &OwnedFd) {
                     // A foreign SIGCHLD consumer already reaped it. Do not signal
                     // the stale PID: it may have been reused for another group.
                     tracked.reaped = true;
+                    forget_running_application(tracked.child.id());
                     false
                 }
                 Err(error) => {
@@ -1086,6 +1185,9 @@ fn reap_children(receiver: Receiver<TrackedChild>, arrivals: &OwnedFd) {
                     // failed. Kill+wait keeps the permit held until the kernel no
                     // longer owns a reapable child and prevents zombie leakage.
                     tracked.reaped = terminate_and_reap(&mut tracked.child);
+                    if tracked.reaped {
+                        forget_running_application(tracked.child.id());
+                    }
                     !tracked.reaped
                 }
             });
@@ -1157,4 +1259,80 @@ fn wait_for_exit_or_arrival(arrivals: &OwnedFd, children: &[TrackedChild]) {
             size_of::<u64>(),
         )
     };
+}
+
+#[cfg(test)]
+mod terminate_tests {
+    use super::*;
+
+    fn packet(command: u8, request_id: u64, arguments: &[&str]) -> Vec<u8> {
+        let mut packet = vec![command];
+        packet.extend_from_slice(&request_id.to_le_bytes());
+        packet.extend_from_slice(&(arguments.len() as u32).to_le_bytes());
+        for argument in arguments {
+            packet.extend_from_slice(&(argument.len() as u32).to_le_bytes());
+            packet.extend_from_slice(argument.as_bytes());
+        }
+        packet
+    }
+
+    #[test]
+    fn terminate_decodes_one_desktop_file_id_and_nothing_else() {
+        assert_eq!(
+            decode(&packet(TERMINATE_APPLICATION, 0, &["firefox.desktop"])),
+            Ok(Request::TerminateApplication {
+                desktop_file_id: "firefox.desktop".into()
+            })
+        );
+        assert_eq!(
+            decode(&packet(TERMINATE_APPLICATION, 0, &[])),
+            Err(DecodeError::DesktopLaunchHasNoIdentity)
+        );
+        assert_eq!(
+            decode(&packet(TERMINATE_APPLICATION, 5, &["firefox.desktop"])),
+            Err(DecodeError::UnexpectedLaunchMetadata)
+        );
+        assert_eq!(
+            decode(&packet(
+                TERMINATE_APPLICATION,
+                0,
+                &["firefox.desktop", "extra"]
+            )),
+            Err(DecodeError::UnexpectedLaunchMetadata)
+        );
+        assert_eq!(
+            decode(&packet(TERMINATE_APPLICATION, 0, &["../firefox.desktop"])),
+            Err(DecodeError::InvalidDesktopFileId)
+        );
+    }
+
+    #[test]
+    fn terminate_signals_only_the_named_applications_process_group() {
+        let spawn = || {
+            Command::new("sleep")
+                .arg("30")
+                .process_group(0)
+                .spawn()
+                .unwrap()
+        };
+        let mut target = spawn();
+        let mut bystander = spawn();
+        {
+            let mut running = RUNNING_APPLICATIONS.lock().unwrap();
+            running.push(("terminate-test-target.desktop".into(), target.id()));
+            running.push(("terminate-test-other.desktop".into(), bystander.id()));
+        }
+        assert_eq!(terminate_application("terminate-test-target.desktop"), 1);
+        assert_eq!(terminate_application("terminate-test-missing.desktop"), 0);
+        let status = target.wait().unwrap();
+        assert_eq!(
+            std::os::unix::process::ExitStatusExt::signal(&status),
+            Some(libc::SIGTERM)
+        );
+        assert!(bystander.try_wait().unwrap().is_none());
+        forget_running_application(target.id());
+        forget_running_application(bystander.id());
+        bystander.kill().unwrap();
+        bystander.wait().unwrap();
+    }
 }
