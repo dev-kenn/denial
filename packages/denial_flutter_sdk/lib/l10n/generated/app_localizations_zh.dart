@@ -5054,6 +5054,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get moveToMonitor => '移到显示器';
 
   @override
+  String get homeAppMenuUninstall => '卸载';
+
+  @override
+  String get homeAppMenuTerminate => '强制结束';
+
+  @override
+  String homeAppMenuUninstallPrompt(String name) {
+    return '要卸载$name吗？此操作无法撤销。';
+  }
+
+  @override
+  String homeAppMenuTerminatePrompt(String name) {
+    return '要强制结束$name吗？未保存的内容将会丢失。';
+  }
+
+  @override
   String get setupWelcome => '欢迎';
 
   @override

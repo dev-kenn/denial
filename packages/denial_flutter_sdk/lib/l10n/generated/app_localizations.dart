@@ -9466,6 +9466,30 @@ abstract class AppLocalizations {
   /// **'Move to monitor'**
   String get moveToMonitor;
 
+  /// Home app menu: removes the held app.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall'**
+  String get homeAppMenuUninstall;
+
+  /// Home app menu: ends the held app's process.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminate'**
+  String get homeAppMenuTerminate;
+
+  /// Home app menu: asks before an app is removed.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove {name}? This cannot be undone.'**
+  String homeAppMenuUninstallPrompt(String name);
+
+  /// Home app menu: asks before an app's process is ended.
+  ///
+  /// In en, this message translates to:
+  /// **'Force {name} to quit? Unsaved work in it is lost.'**
+  String homeAppMenuTerminatePrompt(String name);
+
   /// First-boot setup: title of the language step.
   ///
   /// In en, this message translates to:

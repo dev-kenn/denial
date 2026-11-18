@@ -12,7 +12,20 @@ class const DesktopApp({
   final String? icon,
   final String? iconPath,
   final String? startupWmClass,
+  final List<DesktopAppAction> actions = const <DesktopAppAction>[],
+  /// False when the entry sets `X-Denial-Terminate=false`: its launch command
+  /// is a short-lived client, so ending its process would not end the app.
+  final bool terminable = true,
 }) {
   String get searchableText =>
       <String>[id, name, ...categories, ...keywords].join(' ').toLowerCase();
 }
+
+/// One `[Desktop Action ...]` group of a desktop entry, such as Uninstall.
+///
+/// [exec] is desktop-entry data, like [DesktopApp.exec].
+class const DesktopAppAction({
+  required final String id,
+  required final String name,
+  required final String exec,
+});

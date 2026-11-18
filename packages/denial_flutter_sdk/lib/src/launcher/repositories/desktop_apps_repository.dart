@@ -6,6 +6,9 @@ import 'package:path/path.dart' as p;
 import '../runtime_paths.dart';
 import '../models/desktop_app.dart';
 
+/// Header prefix of a desktop entry's action groups, `[Desktop Action id]`.
+const String _desktopActionGroup = 'Desktop Action ';
+
 class DesktopAppsRepository {
   const DesktopAppsRepository({required this._paths});
 
@@ -180,7 +183,8 @@ class DesktopAppsRepository {
     Map<String, String?> iconCache,
   ) async {
     final fields = <String, String>{};
-    var inDesktopEntry = false;
+    final actionFields = <String, Map<String, String>>{};
+    Map<String, String>? group;
 
     for (final rawLine in await file.readAsLines()) {
       final line = rawLine.trim();
@@ -189,11 +193,21 @@ class DesktopAppsRepository {
       }
 
       if (line.startsWith('[') && line.endsWith(']')) {
-        inDesktopEntry = line == '[Desktop Entry]';
+        final header = line.substring(1, line.length - 1);
+        if (header == 'Desktop Entry') {
+          group = fields;
+        } else if (header.startsWith(_desktopActionGroup)) {
+          group = actionFields.putIfAbsent(
+            header.substring(_desktopActionGroup.length),
+            () => <String, String>{},
+          );
+        } else {
+          group = null;
+        }
         continue;
       }
 
-      if (!inDesktopEntry) {
+      if (group == null) {
         continue;
       }
 
@@ -202,7 +216,7 @@ class DesktopAppsRepository {
         continue;
       }
 
-      fields[line.substring(0, equals)] = line.substring(equals + 1);
+      group[line.substring(0, equals)] = line.substring(equals + 1);
     }
 
     if ((fields['Type'] ?? 'Application') != 'Application') {
@@ -252,7 +266,32 @@ class DesktopAppsRepository {
       icon: icon,
       iconPath: iconPath,
       startupWmClass: fields['StartupWMClass']?.trim(),
+      actions: _desktopActions(fields['Actions'], actionFields),
+      terminable: fields['X-Denial-Terminate']?.trim().toLowerCase() != 'false',
     );
+  }
+
+  /// The actions `Actions=` lists, in its order, that have a name and a command.
+  List<DesktopAppAction> _desktopActions(
+    String? listed,
+    Map<String, Map<String, String>> groups,
+  ) {
+    final actions = <DesktopAppAction>[];
+    for (final id in _desktopStringList(listed)) {
+      final fields = groups[id];
+      if (fields == null) {
+        continue;
+      }
+      final name = _localizedDesktopValue(fields, 'Name')?.trim();
+      final exec = fields['Exec']?.trim();
+      if (name == null || name.isEmpty || exec == null || exec.isEmpty) {
+        continue;
+      }
+      actions.add(
+        DesktopAppAction(id: id, name: _unescapeDesktopValue(name), exec: exec),
+      );
+    }
+    return List<DesktopAppAction>.unmodifiable(actions);
   }
 
   String? _localizedDesktopValue(Map<String, String> fields, String key) {

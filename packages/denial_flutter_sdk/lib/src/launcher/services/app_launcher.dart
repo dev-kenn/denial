@@ -80,6 +80,28 @@ class AppLauncher {
     );
   }
 
+  /// Runs one of [app]'s desktop actions, such as Uninstall. It starts like an
+  /// application launch but opens no launch transition.
+  Future<bool> launchAction(DesktopApp app, DesktopAppAction action) async {
+    final argv = _execParser.parse(action.exec, app);
+    if (argv.isEmpty) {
+      return false;
+    }
+    return _bridge.launchDesktopApplication(app.id, argv);
+  }
+
+  /// Runs [argv], a command of [app] such as its package's removal, without a
+  /// launch transition.
+  Future<bool> runCommand(DesktopApp app, List<String> argv) async {
+    if (argv.isEmpty) {
+      return false;
+    }
+    return _bridge.launchDesktopApplication(app.id, argv);
+  }
+
+  /// Ends the processes the shell started for [app].
+  bool terminate(DesktopApp app) => _bridge.terminateDesktopApplication(app.id);
+
   String? _executableFrom(List<String> argv) {
     if (argv.isEmpty) {
       return null;

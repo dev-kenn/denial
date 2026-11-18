@@ -2,7 +2,7 @@
 /// Desktop-entry utilities support command validation without launching apps.
 library;
 
-export 'package:denial_sdk/applications.dart' show DesktopApp;
+export 'package:denial_sdk/applications.dart' show DesktopApp, DesktopAppAction;
 
 export 'src/launcher/controllers/application_recents_controller.dart'
     show
@@ -16,6 +16,7 @@ export 'src/launcher/controllers/home_grid_controller.dart'
         HomeGridController,
         HomeGridState,
         appLauncherProvider,
+        appPackageServiceProvider,
         desktopAppsRepositoryProvider,
         homeClockProvider,
         homeGridControllerProvider,
@@ -38,6 +39,7 @@ export 'src/launcher/repositories/home_layout_repository.dart'
     show HomeLayoutRepository, HomeSavedLayouts;
 export 'src/launcher/runtime_paths.dart' show RuntimePaths;
 export 'src/launcher/services/app_launcher.dart' show AppLauncher;
+export 'src/launcher/services/app_package_service.dart' show AppPackageService;
 export 'src/launcher/services/desktop_exec_parser.dart' show DesktopExecParser;
 export 'src/launcher/services/screen_power_service.dart'
     show ScreenPowerService;

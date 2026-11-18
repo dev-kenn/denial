@@ -5309,6 +5309,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get moveToMonitor => 'Move to monitor';
 
   @override
+  String get homeAppMenuUninstall => 'Uninstall';
+
+  @override
+  String get homeAppMenuTerminate => 'Terminate';
+
+  @override
+  String homeAppMenuUninstallPrompt(String name) {
+    return 'Remove $name? This cannot be undone.';
+  }
+
+  @override
+  String homeAppMenuTerminatePrompt(String name) {
+    return 'Force $name to quit? Unsaved work in it is lost.';
+  }
+
+  @override
   String get setupWelcome => 'Welcome';
 
   @override

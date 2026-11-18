@@ -593,6 +593,11 @@ class DenialBridge {
     launchRequestId: launchRequestId,
   );
 
+  /// Ends the applications started with [desktopFileId]; see
+  /// [BridgeSessionClient.terminateDesktopApplication].
+  bool terminateDesktopApplication(String desktopFileId) =>
+      _session.terminateDesktopApplication(desktopFileId);
+
   bool takeScreenshot() => _session.takeScreenshot();
 
   bool screenshotPrepared(int requestId) =>

@@ -41,6 +41,7 @@ final class BridgeSessionClient {
   static const int _screenshotPreparedCommand = 4;
   static const int _cancelScreenshotCommand = 5;
   static const int _restartCommand = 6;
+  static const int _terminateApplicationCommand = 7;
   static const int _systemCommandHeaderBytes = 1 + 8 + 4;
   static const int _maxSystemCommandBytes = 64 * 1024;
   static const int _maxSystemCommandArguments = 64;
@@ -319,6 +320,23 @@ final class BridgeSessionClient {
       _launchDesktopApplicationCommand,
       argv: <String>[desktopFileId, ...argv],
       requestId: launchRequestId,
+    );
+  }
+
+  /// Asks deniald to end the applications the shell started with
+  /// [desktopFileId]: it signals their process groups and kills any still
+  /// running after a short grace period. Windows an app opened some other way
+  /// are not affected. Returns whether the request was sent.
+  bool terminateDesktopApplication(String desktopFileId) {
+    if (desktopFileId.isEmpty ||
+        !desktopFileId.endsWith('.desktop') ||
+        desktopFileId.contains('/') ||
+        desktopFileId.contains('\u0000')) {
+      return false;
+    }
+    return _sendSystemCommand(
+      _terminateApplicationCommand,
+      argv: <String>[desktopFileId],
     );
   }
 

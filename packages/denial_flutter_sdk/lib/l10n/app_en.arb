@@ -7000,6 +7000,20 @@
   "@colorTuningPresets": {"description": "Color tuning: shows the built-in looks."},
   "moveToMonitor": "Move to monitor",
   "@moveToMonitor": {"description": "Button on a phone recents card: moves the app to the external monitor."},
+  "homeAppMenuUninstall": "Uninstall",
+  "@homeAppMenuUninstall": {"description": "Home app menu: removes the held app."},
+  "homeAppMenuTerminate": "Terminate",
+  "@homeAppMenuTerminate": {"description": "Home app menu: ends the held app's process."},
+  "homeAppMenuUninstallPrompt": "Remove {name}? This cannot be undone.",
+  "@homeAppMenuUninstallPrompt": {
+    "description": "Home app menu: asks before an app is removed.",
+    "placeholders": {"name": {"type": "String", "example": "Firefox"}}
+  },
+  "homeAppMenuTerminatePrompt": "Force {name} to quit? Unsaved work in it is lost.",
+  "@homeAppMenuTerminatePrompt": {
+    "description": "Home app menu: asks before an app's process is ended.",
+    "placeholders": {"name": {"type": "String", "example": "Firefox"}}
+  },
   "setupWelcome": "Welcome",
   "@setupWelcome": {"description": "First-boot setup: title of the language step."},
   "setupLanguageBody": "Choose your language.",

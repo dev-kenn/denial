@@ -13,6 +13,7 @@ import '../models/home_grid_item.dart';
 import '../repositories/desktop_apps_repository.dart';
 import '../repositories/home_layout_repository.dart';
 import '../services/app_launcher.dart';
+import '../services/app_package_service.dart';
 import 'home_grid_layout.dart';
 
 final desktopAppsRepositoryProvider = Provider<DesktopAppsRepository>((ref) {
@@ -25,6 +26,10 @@ final homeLayoutRepositoryProvider = Provider<HomeLayoutRepository>((ref) {
 
 final appLauncherProvider = Provider<AppLauncher>((ref) {
   return AppLauncher(bridge: ref.watch(denialBridgeProvider));
+});
+
+final appPackageServiceProvider = Provider<AppPackageService>((ref) {
+  return const AppPackageService();
 });
 
 final homeGridControllerProvider =
@@ -632,8 +637,10 @@ bool _sameDesktopApp(DesktopApp a, DesktopApp b) {
       a.icon != b.icon ||
       a.iconPath != b.iconPath ||
       a.startupWmClass != b.startupWmClass ||
+      a.terminable != b.terminable ||
       a.categories.length != b.categories.length ||
-      a.keywords.length != b.keywords.length) {
+      a.keywords.length != b.keywords.length ||
+      a.actions.length != b.actions.length) {
     return false;
   }
 
@@ -644,6 +651,15 @@ bool _sameDesktopApp(DesktopApp a, DesktopApp b) {
   }
   for (var index = 0; index < a.keywords.length; index += 1) {
     if (a.keywords[index] != b.keywords[index]) {
+      return false;
+    }
+  }
+  for (var index = 0; index < a.actions.length; index += 1) {
+    final left = a.actions[index];
+    final right = b.actions[index];
+    if (left.id != right.id ||
+        left.name != right.name ||
+        left.exec != right.exec) {
       return false;
     }
   }
