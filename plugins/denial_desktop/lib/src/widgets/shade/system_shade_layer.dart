@@ -87,7 +87,9 @@ class _SystemShadeLayerState extends ConsumerState<SystemShadeLayer>
     }
     if (dragActive) {
       // A pull down on home carries its side; the status bar sets it itself.
-      final side = ref.read(referenceShellProvider.notifier).takeShadeDragSide();
+      final side = ref
+          .read(referenceShellProvider.notifier)
+          .takeShadeDragSide();
       if (side != null) {
         _selectPageFromStatusBar(
           Offset(side * MediaQuery.sizeOf(context).width, 0),

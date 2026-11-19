@@ -528,10 +528,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       folders.open.value == null;
 
   bool get _verticalAllowed =>
-      !_editing &&
-      !drag.active &&
-      !resize.active &&
-      folders.open.value == null;
+      !_editing && !drag.active && !resize.active && folders.open.value == null;
 
   void _drawerDragStart(DragStartDetails details) {
     _dragStartX = details.globalPosition.dx;
@@ -553,8 +550,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
         _backgroundHold?.cancel();
         _shadeDragging = true;
         final width = MediaQuery.sizeOf(context).width;
-        ref
-            .read(referenceShellProvider.notifier)
+        ref.read(referenceShellProvider.notifier)
           ..setShadeDragSide(
             (_dragStartX / (width <= 0 ? 1 : width)).clamp(0.0, 1.0),
           )
