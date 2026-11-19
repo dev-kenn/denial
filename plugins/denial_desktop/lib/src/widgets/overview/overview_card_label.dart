@@ -23,7 +23,7 @@ final _cardApplication = Provider.autoDispose.family<_CardApplication, String>((
   final id = launcherAppIdentity(appId);
   final launcher = ref.watch(appLauncherProvider);
   for (final item
-      in ref.watch(homeGridControllerProvider).value?.apps ??
+      in ref.watch(homeGridControllerProvider).value?.allApps ??
           const <HomeGridItem>[]) {
     final app = item.app;
     if (app == null) continue;

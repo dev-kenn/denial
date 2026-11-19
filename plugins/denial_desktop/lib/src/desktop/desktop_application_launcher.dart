@@ -36,6 +36,8 @@ class DesktopApplicationLauncher extends ConsumerStatefulWidget {
 class _DesktopApplicationLauncherHostState
     extends ConsumerState<DesktopApplicationLauncher> {
   List<HomeGridItem?>? _slots;
+  List<HomeGridItem>? _dock;
+  List<HomeGridItem>? _hidden;
   LocalFlutterApplicationRegistry? _registry;
   Locale? _locale;
   List<LauncherApplication> _applications = const [];
@@ -44,21 +46,30 @@ class _DesktopApplicationLauncherHostState
 
   void _updateCatalog(
     BuildContext context,
-    List<HomeGridItem?>? slots,
+    (List<HomeGridItem?>?, List<HomeGridItem>?, List<HomeGridItem>?) grid,
     LocalFlutterApplicationRegistry registry,
   ) {
+    final (slots, dock, hidden) = grid;
     final locale = Localizations.localeOf(context);
     if (identical(_slots, slots) &&
+        identical(_dock, dock) &&
+        identical(_hidden, hidden) &&
         identical(_registry, registry) &&
         _locale == locale) {
       return;
     }
     _slots = slots;
+    _dock = dock;
+    _hidden = hidden;
     _registry = registry;
     _locale = locale;
-    final desktopApps = HomeGridLayout.appsIn(slots ?? const <HomeGridItem?>[])
-        .map((item) => item.app)
-        .whereType<DesktopApp>();
+    // Every app, as search must find those off the home screen too: on the
+    // grid, in the dock, or taken off home.
+    final desktopApps = [
+      ...HomeGridLayout.appsIn(slots ?? const <HomeGridItem?>[]),
+      ...?dock,
+      ...?hidden,
+    ].map((item) => item.app).whereType<DesktopApp>();
     _desktopApps = {
       for (final app in desktopApps) desktopApplicationRecentId(app.id): app,
     };
@@ -114,7 +125,10 @@ class _DesktopApplicationLauncherHostState
     _updateCatalog(
       context,
       ref.watch(
-        homeGridControllerProvider.select((state) => state.asData?.value.slots),
+        homeGridControllerProvider.select((state) {
+          final grid = state.asData?.value;
+          return (grid?.slots, grid?.dock, grid?.hidden);
+        }),
       ),
       ref.watch(localFlutterApplicationRegistryProvider),
     );
