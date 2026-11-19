@@ -230,6 +230,30 @@ const BTN_RIGHT: u32 = 0x111;
 #[cfg(feature = "flutter")]
 const MAX_CLIENT_POINTER_PRESSES: usize = 16;
 
+/// Longest gap between two SUPER+right presses that still counts as a
+/// double click.
+#[cfg(feature = "flutter")]
+const SUPER_DOUBLE_CLICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(400);
+/// Furthest the pointer may move between the two presses, in logical pixels.
+#[cfg(feature = "flutter")]
+const SUPER_DOUBLE_CLICK_SLOP: f64 = 8.0;
+
+/// True when a SUPER+right press at `now`/`location` follows `previous`
+/// closely enough in time and place to be the second click of a double click.
+#[cfg(feature = "flutter")]
+fn is_super_double_click(
+    previous: Option<(std::time::Instant, Point<f64, Logical>)>,
+    now: std::time::Instant,
+    location: Point<f64, Logical>,
+) -> bool {
+    let Some((then, at)) = previous else {
+        return false;
+    };
+    now.saturating_duration_since(then) <= SUPER_DOUBLE_CLICK_INTERVAL
+        && (location.x - at.x).abs() <= SUPER_DOUBLE_CLICK_SLOP
+        && (location.y - at.y).abs() <= SUPER_DOUBLE_CLICK_SLOP
+}
+
 #[cfg(feature = "flutter")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ShellKeyStroke {
@@ -3159,4 +3183,42 @@ fn process_flutter_keyboard_transition(
     );
     synchronize_active_keyboard_layout(state, &keyboard);
     true
+}
+
+#[cfg(all(test, feature = "flutter"))]
+mod super_double_click_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn at(x: f64, y: f64) -> Point<f64, Logical> {
+        Point::from((x, y))
+    }
+
+    #[test]
+    fn second_press_in_time_and_place_is_a_double_click() {
+        let start = Instant::now();
+        let first = Some((start, at(100.0, 100.0)));
+        assert!(is_super_double_click(
+            first,
+            start + Duration::from_millis(200),
+            at(103.0, 98.0)
+        ));
+    }
+
+    #[test]
+    fn slow_far_or_first_presses_are_not() {
+        let start = Instant::now();
+        let first = Some((start, at(100.0, 100.0)));
+        assert!(!is_super_double_click(
+            first,
+            start + Duration::from_millis(600),
+            at(100.0, 100.0)
+        ));
+        assert!(!is_super_double_click(
+            first,
+            start + Duration::from_millis(100),
+            at(140.0, 100.0)
+        ));
+        assert!(!is_super_double_click(None, start, at(100.0, 100.0)));
+    }
 }

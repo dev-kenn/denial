@@ -542,6 +542,9 @@ pub(super) struct WaylandFrontend {
     client_pointer_buttons: HashSet<u32>,
     #[cfg(feature = "flutter")]
     retired_pointer_buttons: HashSet<u32>,
+    /// The last SUPER+right press, for the double-click maximize.
+    #[cfg(feature = "flutter")]
+    last_super_right_press: Option<(std::time::Instant, Point<f64, Logical>)>,
     #[cfg(feature = "flutter")]
     client_pointer_presses: Vec<input::ClientPointerPress>,
     /// The newest explicit XDG popup grab installed on the seat.

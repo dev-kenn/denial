@@ -1346,6 +1346,26 @@ pub(in super::super) fn route_pointer_button(
     // for compositor pointer chords instead of Smithay's modifiers.
     let logo = state.native_escape_shortcut.super_pressed();
     let super_action = super_pointer_action(logo, button_code);
+    // SUPER+double right click toggles maximize, like SUPER+W. The first
+    // click still starts the usual resize grab (and focuses the window under
+    // the pointer); the second skips it and swallows its release.
+    if logo && button_code == BTN_RIGHT && button_state == ButtonState::Pressed && !pointer_grabbed
+    {
+        let now = std::time::Instant::now();
+        let location = state.frontend().pointer_location;
+        let double = is_super_double_click(state.frontend().last_super_right_press, now, location);
+        state.frontend_mut().last_super_right_press =
+            if double { None } else { Some((now, location)) };
+        if double && super::super::window_management::toggle_shell_maximize_focused_toplevel(state)
+        {
+            state
+                .frontend_mut()
+                .retired_pointer_buttons
+                .insert(button_code);
+            state.scene_sync.mark_dirty();
+            return true;
+        }
+    }
     let began_super_grab = if !pointer_grabbed
         && button_state == ButtonState::Pressed
         && let Some(action) = super_action

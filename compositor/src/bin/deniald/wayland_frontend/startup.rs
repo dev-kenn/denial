@@ -406,6 +406,8 @@ impl WaylandFrontend {
             #[cfg(feature = "flutter")]
             retired_pointer_buttons: HashSet::new(),
             #[cfg(feature = "flutter")]
+            last_super_right_press: None,
+            #[cfg(feature = "flutter")]
             client_pointer_presses: Vec::new(),
             #[cfg(feature = "flutter")]
             client_popup_grab: None,
