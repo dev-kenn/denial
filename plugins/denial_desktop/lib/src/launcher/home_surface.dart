@@ -897,6 +897,11 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                     columns: _geometry!.columns,
                     onLaunch: _launchFromDrawer,
                     onHold: (item) => _openAppMenu(item, inDrawer: true),
+                    onOpened: () =>
+                        ref.read(referenceShellProvider.notifier).pinKeyboard(),
+                    onClosed: () => ref
+                        .read(referenceShellProvider.notifier)
+                        .unpinKeyboard(),
                     onDrag: _moveDrawer,
                     onDragEnd: _settleDrawer,
                   ),

@@ -346,6 +346,12 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
   final Set<String> _legacyTextInputAppIds = <String>{};
   final Set<String> _backgroundLaunchAppIds = <String>{};
   Timer? _automaticSoftwareKeyboardCloseTimer;
+
+  /// A surface asked to keep the keyboard up (the app drawer's search). The
+  /// compositor opens the keyboard for a text field only within a moment of a
+  /// touch; a field focused later, as the drawer's is once it has slid open,
+  /// reports no panel. While pinned, that report does not close the panel.
+  bool _keyboardPinned = false;
   StreamSubscription<DenialTextInputState>? _textInputStateSubscription;
 
   void _resetBuildFields() {
@@ -398,6 +404,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       _automaticSoftwareKeyboardCloseTimer = null;
       openEdgePanel();
     } else {
+      if (_keyboardPinned) return;
       // Flutter retires the old TextInputClient just before registering the
       // next one during a field-to-field focus transfer. Preserve the panel
       // across that short protocol gap; a replacement editor cancels this
@@ -414,6 +421,23 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
         },
       );
     }
+  }
+
+  /// Opens the keyboard and keeps it open until [unpinKeyboard].
+  void pinKeyboard() {
+    _keyboardPinned = true;
+    _automaticSoftwareKeyboardCloseTimer?.cancel();
+    _automaticSoftwareKeyboardCloseTimer = null;
+    openEdgePanel();
+  }
+
+  /// Lets go of a pinned keyboard and closes it.
+  void unpinKeyboard() {
+    if (!_keyboardPinned) return;
+    _keyboardPinned = false;
+    _automaticSoftwareKeyboardCloseTimer?.cancel();
+    _automaticSoftwareKeyboardCloseTimer = null;
+    closeEdgePanel();
   }
 
   void registerLegacyTextInputAppIds(Iterable<String> appIds) {

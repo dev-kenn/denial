@@ -25,6 +25,8 @@ class HomeAppDrawer extends StatefulWidget {
     required this.columns,
     required this.onLaunch,
     required this.onHold,
+    this.onOpened,
+    this.onClosed,
     required this.onDrag,
     required this.onDragEnd,
   });
@@ -38,6 +40,10 @@ class HomeAppDrawer extends StatefulWidget {
 
   /// A long press on an app.
   final ValueChanged<HomeGridItem> onHold;
+
+  /// The drawer has come fully open, or fully shut.
+  final VoidCallback? onOpened;
+  final VoidCallback? onClosed;
 
   /// Downward travel, in logical pixels.
   final ValueChanged<double> onDrag;
@@ -69,6 +75,9 @@ class _HomeAppDrawerState extends State<HomeAppDrawer> {
   /// The drawer is on screen: while it is, the search field takes the keys.
   bool _shown = false;
 
+  /// The drawer is all the way open, and the search field has the focus.
+  bool _open = false;
+
   @override
   void initState() {
     super.initState();
@@ -89,9 +98,21 @@ class _HomeAppDrawerState extends State<HomeAppDrawer> {
 
   /// Closed, the drawer forgets the search and lets go of the keyboard.
   void _opennessChanged() {
-    final shown = widget.openness.value != 0;
+    final value = widget.openness.value;
+    final shown = value != 0;
     if (shown != _shown) setState(() => _shown = shown);
+    if (value >= 1 && !_open) {
+      // Fully open: type to search, with the keyboard up.
+      _open = true;
+      _searchFocus.requestFocus();
+      widget.onOpened?.call();
+      return;
+    }
     if (shown) return;
+    if (_open) {
+      _open = false;
+      widget.onClosed?.call();
+    }
     if (_query.text.isNotEmpty) _query.clear();
     if (_searchFocus.hasFocus) _searchFocus.unfocus();
   }
