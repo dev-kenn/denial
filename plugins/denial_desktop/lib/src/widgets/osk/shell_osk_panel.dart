@@ -907,7 +907,8 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
   // Layout.
 
   List<_OskRowData> get _rows => switch (_layer) {
-    _OskLayer.letters => _letterRows,
+    // The number row stays over the letters.
+    _OskLayer.letters => _lettersWithNumbers,
     _OskLayer.numbers => _numberRows,
     _OskLayer.symbols => _extraSymbolRows,
   };
@@ -1915,6 +1916,21 @@ class _OskKeySpec {
     };
   }
 }
+
+const _digitRow = _OskRowData([
+  _OskKeySpec.text('1'),
+  _OskKeySpec.text('2'),
+  _OskKeySpec.text('3'),
+  _OskKeySpec.text('4'),
+  _OskKeySpec.text('5'),
+  _OskKeySpec.text('6'),
+  _OskKeySpec.text('7'),
+  _OskKeySpec.text('8'),
+  _OskKeySpec.text('9'),
+  _OskKeySpec.text('0'),
+]);
+
+final _lettersWithNumbers = [_digitRow, ..._letterRows];
 
 const _letterRows = [
   _OskRowData([

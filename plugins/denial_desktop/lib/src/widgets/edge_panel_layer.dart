@@ -602,14 +602,9 @@ class _EdgePanelContent extends ConsumerWidget {
               shortcuts: shortcuts,
               onShortcutsChanged: controller.setOskShortcuts,
               textInputStates: bridge.textInputStates,
-              predictions: bridge.textPredictions,
-              onPredict: (word) => bridge.requestTextPrediction(
-                serial: word.serial,
-                word: word.word,
-                touchX: word.touchX,
-                touchY: word.touchY,
-                manualCapital: word.manualCapital,
-              ),
+              // No word suggestions, no suggestion strip and no autocorrect:
+              // the keyboard types what is pressed. Without predictions the
+              // panel asks for none and reserves no strip.
             ),
           ),
         ),
