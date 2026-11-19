@@ -13,6 +13,7 @@ import 'package:denial_flutter_sdk/system_services.dart'
     show hapticsServiceProvider;
 
 import '../state/reference_shell_controller.dart';
+import '../state/reference_shell_metrics.dart';
 import 'home_drag_controller.dart';
 import 'home_grid_geometry.dart';
 import 'home_icon_locator.dart';
@@ -111,6 +112,15 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
 
   /// A swipe up on home moves the drawer.
   bool _drawerDragging = false;
+
+  /// A pull down on home, with the drawer closed, moves the notification shade.
+  bool _shadeDragging = false;
+
+  /// Where across the screen the vertical drag began.
+  double _dragStartX = 0;
+
+  /// A vertical drag began on home and has not yet moved either way.
+  bool _verticalUndecided = false;
 
   /// Opening or closing faster than this decides on release.
   static const double _drawerFlick = 600;
@@ -517,8 +527,17 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       !resize.active &&
       folders.open.value == null;
 
+  bool get _verticalAllowed =>
+      !_editing &&
+      !drag.active &&
+      !resize.active &&
+      folders.open.value == null;
+
   void _drawerDragStart(DragStartDetails details) {
-    _drawerDragging = _drawerAllowed;
+    _dragStartX = details.globalPosition.dx;
+    _shadeDragging = false;
+    _verticalUndecided = _verticalAllowed && _drawer.value == 0;
+    _drawerDragging = _drawerAllowed && !_verticalUndecided;
     if (_drawerDragging) {
       _backgroundHold?.cancel();
       _drawer.stop();
@@ -526,14 +545,65 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   }
 
   void _drawerDragUpdate(DragUpdateDetails details) {
+    final dy = details.delta.dy;
+    if (_verticalUndecided && dy != 0) {
+      // The first move decides: down pulls the shade, up opens the drawer.
+      _verticalUndecided = false;
+      if (dy > 0) {
+        _backgroundHold?.cancel();
+        _shadeDragging = true;
+        final width = MediaQuery.sizeOf(context).width;
+        ref
+            .read(referenceShellProvider.notifier)
+          ..setShadeDragSide(
+            (_dragStartX / (width <= 0 ? 1 : width)).clamp(0.0, 1.0),
+          )
+          ..startQuickSettingsDrag();
+      } else if (_drawerAllowed) {
+        _drawerDragging = true;
+        _backgroundHold?.cancel();
+        _drawer.stop();
+      }
+    }
+    if (_shadeDragging) {
+      ref
+          .read(referenceShellProvider.notifier)
+          .updateQuickSettingsDrag(
+            Offset(
+              0.0,
+              dy *
+                  ReferenceShellMetrics.quickSettingsDragScale(
+                    MediaQuery.sizeOf(context),
+                  ),
+            ),
+          );
+      return;
+    }
     if (!_drawerDragging) return;
-    _moveDrawer(details.delta.dy);
+    _moveDrawer(dy);
   }
 
   void _drawerDragEnd(DragEndDetails details) {
+    _verticalUndecided = false;
+    if (_shadeDragging) {
+      _shadeDragging = false;
+      ref
+          .read(referenceShellProvider.notifier)
+          .endQuickSettingsDrag(details.primaryVelocity ?? 0.0);
+      return;
+    }
     if (!_drawerDragging) return;
     _drawerDragging = false;
     _settleDrawer(details.velocity.pixelsPerSecond.dy);
+  }
+
+  void _drawerDragCancel() {
+    _verticalUndecided = false;
+    _drawerDragging = false;
+    if (_shadeDragging) {
+      _shadeDragging = false;
+      ref.read(referenceShellProvider.notifier).endQuickSettingsDrag(0.0);
+    }
   }
 
   /// Moves the drawer [down] logical pixels.
@@ -734,16 +804,15 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       duration: const Duration(milliseconds: 200),
       child: IgnorePointer(ignoring: _editing, child: grid),
     );
-    final content = contents.drawer
-        ? GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onVerticalDragStart: _drawerDragStart,
-            onVerticalDragUpdate: _drawerDragUpdate,
-            onVerticalDragEnd: _drawerDragEnd,
-            onVerticalDragCancel: () => _drawerDragging = false,
-            child: shown,
-          )
-        : shown;
+    // The pull down opens the shade even when the drawer is off.
+    final content = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragStart: _drawerDragStart,
+      onVerticalDragUpdate: _drawerDragUpdate,
+      onVerticalDragEnd: _drawerDragEnd,
+      onVerticalDragCancel: _drawerDragCancel,
+      child: shown,
+    );
     final apps = contents.drawer ? this.grid?.apps : null;
     return Offstage(
       offstage: !widget.active,

@@ -317,6 +317,18 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     return requested;
   }
 
+  /// Where across the screen, 0 to 1, a shade drag from home began; the shade
+  /// picks its page from the side. Reading it clears it.
+  double? _shadeDragSide;
+
+  void setShadeDragSide(double side) => _shadeDragSide = side;
+
+  double? takeShadeDragSide() {
+    final side = _shadeDragSide;
+    _shadeDragSide = null;
+    return side;
+  }
+
   double _gestureReleaseVelocity = 0;
 
   /// Vertical velocity, in logical pixels per second, with which the bottom
