@@ -9472,6 +9472,12 @@ abstract class AppLocalizations {
   /// **'Uninstall'**
   String get homeAppMenuUninstall;
 
+  /// Home app menu: takes the held app off the home screen; it stays in the app drawer.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get homeAppMenuRemove;
+
   /// Home app menu: ends the held app's process.
   ///
   /// In en, this message translates to:

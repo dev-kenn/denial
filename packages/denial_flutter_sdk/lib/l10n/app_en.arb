@@ -7002,6 +7002,8 @@
   "@moveToMonitor": {"description": "Button on a phone recents card: moves the app to the external monitor."},
   "homeAppMenuUninstall": "Uninstall",
   "@homeAppMenuUninstall": {"description": "Home app menu: removes the held app."},
+  "homeAppMenuRemove": "Remove",
+  "@homeAppMenuRemove": {"description": "Home app menu: takes the held app off the home screen; it stays in the app drawer."},
   "homeAppMenuTerminate": "Terminate",
   "@homeAppMenuTerminate": {"description": "Home app menu: ends the held app's process."},
   "homeAppMenuUninstallPrompt": "Remove {name}? This cannot be undone.",

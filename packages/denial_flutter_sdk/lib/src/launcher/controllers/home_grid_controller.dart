@@ -55,7 +55,9 @@ class HomeGridState {
     this.pages = 0,
     this.drawer = false,
     this.sharedBottomRow = false,
-  }) : slots = List.unmodifiable(slots);
+    List<HomeGridItem> hidden = const [],
+  }) : slots = List.unmodifiable(slots),
+       hidden = List.unmodifiable(hidden);
 
   HomeGridState._({
     required this.slots,
@@ -63,9 +65,13 @@ class HomeGridState {
     required this.pages,
     required this.drawer,
     required this.sharedBottomRow,
+    required this.hidden,
   });
 
   final List<HomeGridItem?> slots;
+
+  /// Apps taken off the home screen. They stay in the drawer.
+  final List<HomeGridItem> hidden;
   final int page;
 
   /// Pages the user made in the shown orientation; home shows more when its
@@ -81,8 +87,12 @@ class HomeGridState {
   /// Every application on the grid, folder contents included.
   Iterable<HomeGridItem> get apps => HomeGridLayout.appsIn(slots);
 
+  /// Every application the drawer lists: those on the grid and the hidden.
+  Iterable<HomeGridItem> get allApps => [...apps, ...hidden];
+
   HomeGridState copyWith({
     List<HomeGridItem?>? slots,
+    List<HomeGridItem>? hidden,
     int? page,
     int? pages,
     bool? drawer,
@@ -94,6 +104,7 @@ class HomeGridState {
       pages: pages ?? this.pages,
       drawer: drawer ?? this.drawer,
       sharedBottomRow: sharedBottomRow ?? this.sharedBottomRow,
+      hidden: hidden == null ? this.hidden : List.unmodifiable(hidden),
     );
   }
 }
@@ -119,6 +130,22 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
   /// The orientation the slots are laid out for; null while they belong to
   /// whichever orientation the grid shows first.
   HomeOrientation? _orientation;
+
+  /// Grid ids of the apps taken off the home screen.
+  Set<String> _hiddenIds = {};
+
+  /// Every application found at the last load or refresh, hidden ones too.
+  List<DesktopApp> _apps = const [];
+
+  List<DesktopApp> _visible(List<DesktopApp> apps) => [
+    for (final app in apps)
+      if (!_hiddenIds.contains('app:${app.id}')) app,
+  ];
+
+  List<HomeGridItem> _hiddenItems(List<DesktopApp> apps) => [
+    for (final app in apps)
+      if (_hiddenIds.contains('app:${app.id}')) HomeGridItem.app(app),
+  ];
 
   /// Every orientation's saved layout, the shown one as of its last save.
   Map<HomeOrientation, List<HomeLayoutSlot?>> _layouts = {};
@@ -161,6 +188,9 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
     try {
       final apps = await _loadApplications(appsRepository, reason: 'initial');
       final saved = await layoutRepository.readSavedLayouts();
+      _hiddenIds = saved.hidden.toSet();
+      _apps = apps;
+      final visibleApps = _visible(apps);
       // Portrait first, which is where a phone starts.
       final orientation = HomeOrientation.values
           .where(saved.layouts.containsKey)
@@ -169,7 +199,7 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
           ? saved.unassigned
           : saved.layouts[orientation];
       final slots = HomeGridLayout.initialSlotsForApps(
-        apps,
+        visibleApps,
         localApps,
         savedLayout,
       );
@@ -178,6 +208,7 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
         pages: orientation == null ? 0 : saved.pages[orientation] ?? 0,
         drawer: saved.drawer,
         sharedBottomRow: saved.sharedBottomRow,
+        hidden: _hiddenItems(apps),
       );
       if (!_isBuildActive(generation)) {
         return loaded;
@@ -186,7 +217,12 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
       _layouts = {...saved.layouts};
       _pages = {...saved.pages};
       _lastDesktopRefresh = DateTime.now();
-      if (_savedLayoutNeedsRefresh(apps, localApps, savedLayout, slots)) {
+      if (_savedLayoutNeedsRefresh(
+        visibleApps,
+        localApps,
+        savedLayout,
+        slots,
+      )) {
         _save(slots, state: loaded);
       }
       unawaited(_startDesktopRefreshTriggers(generation, appsRepository));
@@ -237,8 +273,10 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
         return;
       }
 
+      _apps = apps;
+      final visibleApps = _visible(apps);
       final currentApps = _appsByGridId(current.apps);
-      final refreshedApps = _appsByGridId(apps.map(HomeGridItem.app));
+      final refreshedApps = _appsByGridId(visibleApps.map(HomeGridItem.app));
 
       final addedIds = refreshedApps.keys
           .where((id) => !currentApps.containsKey(id))
@@ -254,7 +292,11 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
           )
           .toList(growable: false);
 
-      if (addedIds.isEmpty && removedIds.isEmpty && updatedIds.isEmpty) {
+      final hiddenItems = _hiddenItems(apps);
+      if (addedIds.isEmpty &&
+          removedIds.isEmpty &&
+          updatedIds.isEmpty &&
+          _sameItems(hiddenItems, current.hidden)) {
         return;
       }
 
@@ -263,10 +305,10 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
           .applications;
       final slots = HomeGridLayout.refreshSlotsForApps(
         current.slots,
-        apps,
+        visibleApps,
         localApps,
       );
-      state = AsyncData(current.copyWith(slots: slots));
+      state = AsyncData(current.copyWith(slots: slots, hidden: hiddenItems));
       _save(slots);
     } finally {
       if (_isBuildActive(generation)) {
@@ -401,6 +443,27 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
       final next = HomeGridLayout.conform(slots);
       return identical(next, slots) ? null : next;
     });
+  }
+
+  /// Takes [item] off the home screen. It stays in the drawer and is not
+  /// placed again when the app list refreshes.
+  void hideFromHome(HomeGridItem item) {
+    final current = state.asData?.value;
+    if (current == null || item.app == null || !current.drawer) {
+      return;
+    }
+    _hiddenIds = {..._hiddenIds, item.id};
+    final localApps = ref
+        .read(localFlutterApplicationRegistryProvider)
+        .applications;
+    final slots = HomeGridLayout.refreshSlotsForApps(
+      current.slots,
+      _visible(_apps),
+      localApps,
+    );
+    final next = current.copyWith(slots: slots, hidden: _hiddenItems(_apps));
+    state = AsyncData(next);
+    _save(slots, state: next);
   }
 
   /// Adds an empty page after the last.
@@ -615,10 +678,26 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
               },
               drawer: shown?.drawer ?? false,
               sharedBottomRow: shown?.sharedBottomRow ?? false,
+              hidden: _hiddenIds.toList(growable: false),
             ),
           ),
     );
   }
+}
+
+bool _sameItems(List<HomeGridItem> a, List<HomeGridItem> b) {
+  if (a.length != b.length) return false;
+  for (var index = 0; index < a.length; index += 1) {
+    final left = a[index].app;
+    final right = b[index].app;
+    if (a[index].id != b[index].id ||
+        left == null ||
+        right == null ||
+        !_sameDesktopApp(left, right)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 List<HomeLayoutSlot?> _layoutOf(List<HomeGridItem?> slots) => [

@@ -5312,6 +5312,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeAppMenuUninstall => 'Uninstall';
 
   @override
+  String get homeAppMenuRemove => 'Remove';
+
+  @override
   String get homeAppMenuTerminate => 'Terminate';
 
   @override

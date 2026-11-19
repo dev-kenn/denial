@@ -1589,6 +1589,7 @@
   "colorTuningPresets": "预设",
   "moveToMonitor": "移到显示器",
   "homeAppMenuUninstall": "卸载",
+  "homeAppMenuRemove": "移除",
   "homeAppMenuTerminate": "强制结束",
   "homeAppMenuUninstallPrompt": "要卸载{name}吗？此操作无法撤销。",
   "homeAppMenuTerminatePrompt": "要强制结束{name}吗？未保存的内容将会丢失。",

@@ -88,6 +88,11 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   /// there opens its menu instead of dropping it.
   ({HomeGridItem item, Offset start})? _heldApp;
 
+  /// Opens the held app's menu while the finger is still down, once it has
+  /// stayed put this long after the tile was picked up.
+  Timer? _menuHold;
+  static const Duration _menuHoldDelay = Duration(milliseconds: 150);
+
   /// The open app menu, or null.
   ({String title, List<HomeAppMenuEntry> entries})? _appMenu;
 
@@ -152,6 +157,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   void dispose() {
     _locator.detach(_iconFor);
     _backgroundHold?.cancel();
+    _menuHold?.cancel();
     _drawer.dispose();
     drag.dispose();
     resize.dispose();
@@ -306,6 +312,21 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       tileRect: tileRect,
       global: pointer,
     );
+    _menuHold?.cancel();
+    if (_heldApp != null) {
+      _menuHold = Timer(_menuHoldDelay, _openMenuWhileHeld);
+    }
+  }
+
+  /// The finger has stayed on the picked-up app: put the tile back and open
+  /// its menu now, without waiting for the finger to lift.
+  void _openMenuWhileHeld() {
+    _menuHold = null;
+    final held = _heldApp;
+    if (!mounted || held == null || !drag.active) return;
+    _heldApp = null;
+    drag.end(cancelled: true);
+    _openAppMenu(held.item);
   }
 
   // Input --------------------------------------------------------------------
@@ -351,6 +372,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     if (heldApp != null &&
         (event.position - heldApp.start).distance > _holdSlop) {
       _heldApp = null;
+      _menuHold?.cancel();
     }
     final held = _heldWidget;
     if (held != null &&
@@ -374,6 +396,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     _pointer = null;
     _heldWidget = null;
     _backgroundHold?.cancel();
+    _menuHold?.cancel();
     final heldApp = _heldApp;
     _heldApp = null;
     if (drag.active) {
@@ -404,7 +427,6 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     final l10n = context.l10n;
     final launcher = ref.read(appLauncherProvider);
     final packages = ref.read(appPackageServiceProvider);
-    final shell = ref.read(referenceShellProvider);
     final entries = <HomeAppMenuEntry>[];
     var removes = false;
     for (final action in app.actions) {
@@ -426,8 +448,9 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
         ),
       );
     }
-    if (app.terminable &&
-        launcher.findOpenWindow(app, shell.openAppWindows) != null) {
+    // Offered for every terminable app, as Force stop is: ending an app that
+    // is not running does nothing.
+    if (app.terminable) {
       entries.add(
         HomeAppMenuEntry(
           label: l10n.homeAppMenuTerminate,
@@ -438,7 +461,21 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
         ),
       );
     }
-    if (!removes) {
+    final flatpak = removes ? null : packages.flatpakApp(app.desktopPath);
+    if (flatpak != null) {
+      entries.add(
+        HomeAppMenuEntry(
+          label: l10n.homeAppMenuUninstall,
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+          confirmation: l10n.homeAppMenuUninstallPrompt(app.name),
+          onSelected: () => launcher.runCommand(
+            app,
+            packages.flatpakUninstallCommand(flatpak),
+          ),
+        ),
+      );
+    } else if (!removes) {
       final package = await packages.owningPackage(app.desktopPath);
       if (package != null && packages.isRemovable(package)) {
         entries.add(
@@ -452,6 +489,16 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
           ),
         );
       }
+    }
+    // Taking an app off home leaves it in the drawer, so only when there is one.
+    if (grid?.drawer ?? false) {
+      entries.add(
+        HomeAppMenuEntry(
+          label: l10n.homeAppMenuRemove,
+          icon: Icons.remove_circle_outline_rounded,
+          onSelected: () => gridController.hideFromHome(item),
+        ),
+      );
     }
     if (!mounted || entries.isEmpty) return;
     setState(() => _appMenu = (title: app.name, entries: entries));
@@ -809,7 +856,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       onVerticalDragCancel: _drawerDragCancel,
       child: shown,
     );
-    final apps = contents.drawer ? this.grid?.apps : null;
+    final apps = contents.drawer ? this.grid?.allApps : null;
     return Offstage(
       offstage: !widget.active,
       child: TickerMode(

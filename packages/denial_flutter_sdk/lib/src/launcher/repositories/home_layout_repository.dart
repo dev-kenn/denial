@@ -11,9 +11,14 @@ class HomeSavedLayouts {
     this.pages = const {},
     this.drawer = false,
     this.sharedBottomRow = false,
+    this.hidden = const [],
   });
 
   final Map<HomeOrientation, List<HomeLayoutSlot?>> layouts;
+
+  /// Grid ids of apps the user took off the home screen. They stay in the
+  /// drawer and are not placed again when the app list refreshes.
+  final List<String> hidden;
 
   /// Pages the user added in each orientation, empty ones included. Home
   /// shows at least as many pages as its items need.
@@ -68,6 +73,12 @@ class HomeLayoutRepository {
         },
         drawer: decoded['drawer'] == true,
         sharedBottomRow: decoded['sharedBottomRow'] == true,
+        hidden: switch (decoded['hidden']) {
+          final List raw => List<String>.unmodifiable(
+            raw.whereType<String>().where((id) => id.isNotEmpty),
+          ),
+          _ => const [],
+        },
       );
     } on Object {
       return const HomeSavedLayouts();
@@ -91,6 +102,7 @@ class HomeLayoutRepository {
           },
         'drawer': saved.drawer,
         'sharedBottomRow': saved.sharedBottomRow,
+        if (saved.hidden.isNotEmpty) 'hidden': saved.hidden,
       });
       await file.writeAsString('$payload\n', flush: true);
     } on Object {

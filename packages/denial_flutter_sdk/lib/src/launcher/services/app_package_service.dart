@@ -48,6 +48,34 @@ class AppPackageService {
     }
   }
 
+  static final RegExp _flatpakId = RegExp(r'^[A-Za-z0-9._-]+$');
+
+  /// The Flatpak application that exports [desktopPath], or null when it is
+  /// not a Flatpak launcher.
+  ({String id, bool system})? flatpakApp(String desktopPath) {
+    const systemExports = '/var/lib/flatpak/exports/';
+    final system = desktopPath.startsWith(systemExports);
+    final user = desktopPath.contains('/.local/share/flatpak/exports/');
+    if ((!system && !user) || !desktopPath.endsWith('.desktop')) {
+      return null;
+    }
+    final file = desktopPath.substring(desktopPath.lastIndexOf('/') + 1);
+    final id = file.substring(0, file.length - '.desktop'.length);
+    return _flatpakId.hasMatch(id) ? (id: id, system: system) : null;
+  }
+
+  /// Removes one Flatpak application. A system installation asks for
+  /// authentication through Denial's polkit agent.
+  List<String> flatpakUninstallCommand(({String id, bool system}) app) =>
+      <String>[
+        'flatpak',
+        'uninstall',
+        app.system ? '--system' : '--user',
+        '-y',
+        '--noninteractive',
+        app.id,
+      ];
+
   /// Whether the shell may offer to remove [package].
   bool isRemovable(String package) {
     if (!_packageName.hasMatch(package) ||
