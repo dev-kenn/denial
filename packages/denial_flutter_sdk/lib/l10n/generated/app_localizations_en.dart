@@ -5308,6 +5308,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeAppMenuUninstall => 'Uninstall';
 
   @override
+  String get homeAppMenuAddToDock => 'Add to dock';
+
+  @override
+  String get homeAppMenuRemoveFromDock => 'Remove from dock';
+
+  @override
+  String get homeAppMenuMoveLeft => 'Move left';
+
+  @override
+  String get homeAppMenuMoveRight => 'Move right';
+
+  @override
   String get homeAppMenuAddToHome => 'Add to home screen';
 
   @override

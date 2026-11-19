@@ -147,6 +147,24 @@ class HomeGridGeometry {
     );
   }
 
+  /// Where the dock's [count] apps sit along the bottom row. Up to
+  /// [columns] apps take the grid's own cells; more share the row's width, so
+  /// their tiles shrink to fit.
+  List<Rect> dockRects(int count) {
+    final slots = math.max(columns, count);
+    final content = columns * tileSize.width + (columns - 1) * gap;
+    final width = (content - gap * (slots - 1)) / slots;
+    return [
+      for (var index = 0; index < count; index++)
+        Rect.fromLTWH(
+          inset + index * (width + gap),
+          bottomRowTop,
+          width,
+          tileSize.height,
+        ),
+    ];
+  }
+
   /// The cell at [row] and [column] as [page] shows it: a shared bottom row
   /// is the first page's.
   int indexAt(int page, int row, int column) =>

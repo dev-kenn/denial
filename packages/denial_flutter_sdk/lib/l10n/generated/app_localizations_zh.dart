@@ -5053,6 +5053,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeAppMenuUninstall => '卸载';
 
   @override
+  String get homeAppMenuAddToDock => '添加到程序坞';
+
+  @override
+  String get homeAppMenuRemoveFromDock => '从程序坞移除';
+
+  @override
+  String get homeAppMenuMoveLeft => '左移';
+
+  @override
+  String get homeAppMenuMoveRight => '右移';
+
+  @override
   String get homeAppMenuAddToHome => '添加到主屏幕';
 
   @override

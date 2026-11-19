@@ -27,6 +27,10 @@ class HomeGridLayout {
   /// keep theirs free.
   static bool sharedBottomRow = false;
 
+  /// The bottom row belongs to the dock: no grid item takes a cell in it.
+  /// Set with [columns] by the pager, like [sharedBottomRow].
+  static bool dockReserved = false;
+
   static const double gridGap = 22;
   static const int minPages = 1;
 
@@ -324,7 +328,8 @@ class HomeGridLayout {
   /// Whether a single-cell item may take [cell]: with [sharedBottomRow],
   /// only the first page's bottom row takes items.
   static bool _singleAllowed(int cell) =>
-      !sharedBottomRow || cell < columns * rows || !inBottomRow(cell);
+      (!dockReserved || !inBottomRow(cell)) &&
+      (!sharedBottomRow || cell < columns * rows || !inBottomRow(cell));
 
   /// Whether [item] anchored at [index] keeps the bottom row's rules: only
   /// single-row items go there.

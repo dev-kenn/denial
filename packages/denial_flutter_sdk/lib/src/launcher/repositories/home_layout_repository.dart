@@ -12,9 +12,14 @@ class HomeSavedLayouts {
     this.drawer = false,
     this.sharedBottomRow = false,
     this.hidden = const [],
+    this.dock,
   });
 
   final Map<HomeOrientation, List<HomeLayoutSlot?>> layouts;
+
+  /// Grid ids of the apps in the dock, in order; null in files from before
+  /// the dock, whose bottom row the dock takes over.
+  final List<String>? dock;
 
   /// Grid ids of apps the user took off the home screen. They stay in the
   /// drawer and are not placed again when the app list refreshes.
@@ -73,6 +78,12 @@ class HomeLayoutRepository {
         },
         drawer: decoded['drawer'] == true,
         sharedBottomRow: decoded['sharedBottomRow'] == true,
+        dock: switch (decoded['dock']) {
+          final List raw => List<String>.unmodifiable(
+            raw.whereType<String>().where((id) => id.isNotEmpty),
+          ),
+          _ => null,
+        },
         hidden: switch (decoded['hidden']) {
           final List raw => List<String>.unmodifiable(
             raw.whereType<String>().where((id) => id.isNotEmpty),
@@ -103,6 +114,7 @@ class HomeLayoutRepository {
         'drawer': saved.drawer,
         'sharedBottomRow': saved.sharedBottomRow,
         if (saved.hidden.isNotEmpty) 'hidden': saved.hidden,
+        if (saved.dock != null) 'dock': saved.dock,
       });
       await file.writeAsString('$payload\n', flush: true);
     } on Object {

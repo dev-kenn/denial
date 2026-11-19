@@ -56,8 +56,10 @@ class HomeGridState {
     this.drawer = false,
     this.sharedBottomRow = false,
     List<HomeGridItem> hidden = const [],
+    List<HomeGridItem> dock = const [],
   }) : slots = List.unmodifiable(slots),
-       hidden = List.unmodifiable(hidden);
+       hidden = List.unmodifiable(hidden),
+       dock = List.unmodifiable(dock);
 
   HomeGridState._({
     required this.slots,
@@ -66,9 +68,13 @@ class HomeGridState {
     required this.drawer,
     required this.sharedBottomRow,
     required this.hidden,
+    required this.dock,
   });
 
   final List<HomeGridItem?> slots;
+
+  /// The apps in the dock under the grid, in order.
+  final List<HomeGridItem> dock;
 
   /// Apps taken off the home screen. They stay in the drawer.
   final List<HomeGridItem> hidden;
@@ -88,11 +94,15 @@ class HomeGridState {
   Iterable<HomeGridItem> get apps => HomeGridLayout.appsIn(slots);
 
   /// Every application the drawer lists: those on the grid and the hidden.
-  Iterable<HomeGridItem> get allApps => [...apps, ...hidden];
+  Iterable<HomeGridItem> get allApps => [...apps, ...dock, ...hidden];
+
+  /// Every application on the home screen: on the grid or in the dock.
+  Iterable<HomeGridItem> get placedApps => [...apps, ...dock];
 
   HomeGridState copyWith({
     List<HomeGridItem?>? slots,
     List<HomeGridItem>? hidden,
+    List<HomeGridItem>? dock,
     int? page,
     int? pages,
     bool? drawer,
@@ -105,6 +115,7 @@ class HomeGridState {
       drawer: drawer ?? this.drawer,
       sharedBottomRow: sharedBottomRow ?? this.sharedBottomRow,
       hidden: hidden == null ? this.hidden : List.unmodifiable(hidden),
+      dock: dock == null ? this.dock : List.unmodifiable(dock),
     );
   }
 }
@@ -137,10 +148,27 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
   /// Every application found at the last load or refresh, hidden ones too.
   List<DesktopApp> _apps = const [];
 
+  /// How many apps the dock holds.
+  static const int dockLimit = 5;
+
+  /// Grid ids of the apps in the dock, in order; null until the dock has
+  /// taken the apps of the bottom row it replaces ([migrateDock]).
+  List<String>? _dockIds;
+
   List<DesktopApp> _visible(List<DesktopApp> apps) => [
     for (final app in apps)
-      if (!_hiddenIds.contains('app:${app.id}')) app,
+      if (!_hiddenIds.contains('app:${app.id}') &&
+          !(_dockIds?.contains('app:${app.id}') ?? false))
+        app,
   ];
+
+  List<HomeGridItem> _dockItems(List<DesktopApp> apps) {
+    final byId = {for (final app in apps) 'app:${app.id}': app};
+    return [
+      for (final id in _dockIds ?? const <String>[])
+        if (byId[id] case final app?) HomeGridItem.app(app),
+    ];
+  }
 
   List<HomeGridItem> _hiddenItems(List<DesktopApp> apps) => [
     for (final app in apps)
@@ -189,6 +217,7 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
       final apps = await _loadApplications(appsRepository, reason: 'initial');
       final saved = await layoutRepository.readSavedLayouts();
       _hiddenIds = saved.hidden.toSet();
+      _dockIds = saved.dock?.toList();
       _apps = apps;
       final visibleApps = _visible(apps);
       // Portrait first, which is where a phone starts.
@@ -209,6 +238,7 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
         drawer: saved.drawer,
         sharedBottomRow: saved.sharedBottomRow,
         hidden: _hiddenItems(apps),
+        dock: _dockItems(apps),
       );
       if (!_isBuildActive(generation)) {
         return loaded;
@@ -293,10 +323,12 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
           .toList(growable: false);
 
       final hiddenItems = _hiddenItems(apps);
+      final dockItems = _dockItems(apps);
       if (addedIds.isEmpty &&
           removedIds.isEmpty &&
           updatedIds.isEmpty &&
-          _sameItems(hiddenItems, current.hidden)) {
+          _sameItems(hiddenItems, current.hidden) &&
+          _sameItems(dockItems, current.dock)) {
         return;
       }
 
@@ -308,7 +340,9 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
         visibleApps,
         localApps,
       );
-      state = AsyncData(current.copyWith(slots: slots, hidden: hiddenItems));
+      state = AsyncData(
+        current.copyWith(slots: slots, hidden: hiddenItems, dock: dockItems),
+      );
       _save(slots);
     } finally {
       if (_isBuildActive(generation)) {
@@ -453,6 +487,15 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
       return;
     }
     _hiddenIds = {..._hiddenIds, item.id};
+    if (_dockIds case final ids? when ids.contains(item.id)) {
+      _dockIds = [...ids]..remove(item.id);
+    }
+    _replan(current);
+  }
+
+  /// Lays the grid out again for the apps that are neither hidden nor docked,
+  /// and publishes the hidden and docked ones.
+  void _replan(HomeGridState current) {
     final localApps = ref
         .read(localFlutterApplicationRegistryProvider)
         .applications;
@@ -461,9 +504,90 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
       _visible(_apps),
       localApps,
     );
-    final next = current.copyWith(slots: slots, hidden: _hiddenItems(_apps));
+    final next = current.copyWith(
+      slots: slots,
+      hidden: _hiddenItems(_apps),
+      dock: _dockItems(_apps),
+    );
     state = AsyncData(next);
     _save(slots, state: next);
+  }
+
+  /// The first time, moves the apps in the bottom row of the first page, which
+  /// the dock replaces, into the dock. Rows must be known.
+  void migrateDock() {
+    if (_dockIds != null) return;
+    final current = state.asData?.value;
+    if (current == null || HomeGridLayout.rows < 2) return;
+    final pageSize = HomeGridLayout.columns * HomeGridLayout.rows;
+    final ids = <String>[];
+    for (
+      var index = 0;
+      index < current.slots.length && index < pageSize;
+      index++
+    ) {
+      final item = current.slots[index];
+      if (item != null &&
+          item.app != null &&
+          HomeGridLayout.inBottomRow(index) &&
+          ids.length < dockLimit) {
+        ids.add(item.id);
+      }
+    }
+    _dockIds = ids;
+    _replan(current);
+  }
+
+  /// Moves [item] from the grid to the end of the dock.
+  void addToDock(HomeGridItem item) {
+    final current = state.asData?.value;
+    final ids = _dockIds;
+    if (current == null ||
+        ids == null ||
+        item.app == null ||
+        ids.contains(item.id) ||
+        ids.length >= dockLimit) {
+      return;
+    }
+    _dockIds = [...ids, item.id];
+    _replan(current);
+  }
+
+  /// Moves [item] from the dock to the first free cell of the grid.
+  void removeFromDock(HomeGridItem item) {
+    final current = state.asData?.value;
+    final ids = _dockIds;
+    final app = item.app;
+    if (current == null ||
+        ids == null ||
+        app == null ||
+        !ids.contains(item.id)) {
+      return;
+    }
+    _dockIds = [...ids]..remove(item.id);
+    final slots = HomeGridLayout.placeItemInFirstFreeSlot(
+      current.slots,
+      HomeGridItem.app(app),
+    );
+    final next = current.copyWith(slots: slots, dock: _dockItems(_apps));
+    state = AsyncData(next);
+    _save(slots, state: next);
+  }
+
+  /// Moves [item] [by] places along the dock.
+  void moveInDock(HomeGridItem item, int by) {
+    final current = state.asData?.value;
+    final ids = _dockIds;
+    if (current == null || ids == null) return;
+    final from = ids.indexOf(item.id);
+    final to = from + by;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    final next = [...ids];
+    next.insert(to, next.removeAt(from));
+    _dockIds = next;
+    final updated = current.copyWith(dock: _dockItems(_apps));
+    state = AsyncData(updated);
+    _save(current.slots, state: updated);
   }
 
   /// Puts a hidden [item] back on the home screen, in the first free cell.
@@ -699,6 +823,7 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
               drawer: shown?.drawer ?? false,
               sharedBottomRow: shown?.sharedBottomRow ?? false,
               hidden: _hiddenIds.toList(growable: false),
+              dock: _dockIds?.toList(growable: false),
             ),
           ),
     );

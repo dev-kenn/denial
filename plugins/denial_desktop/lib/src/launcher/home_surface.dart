@@ -420,7 +420,14 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
 
   /// Opens the menu of [item]: its desktop actions, then Terminate when it is
   /// running and Uninstall when a package owns it.
-  Future<void> _openAppMenu(HomeGridItem item, {bool inDrawer = false}) async {
+  @override
+  void holdDockApp(HomeGridItem app) => _openAppMenu(app, inDock: true);
+
+  Future<void> _openAppMenu(
+    HomeGridItem item, {
+    bool inDrawer = false,
+    bool inDock = false,
+  }) async {
     final app = item.app;
     if (app == null) return;
     ref.read(hapticsServiceProvider).pulse();
@@ -492,7 +499,8 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     }
     if (inDrawer) {
       // An app already on home cannot be added twice.
-      final onHome = grid?.apps.any((placed) => placed.id == item.id) ?? false;
+      final onHome =
+          grid?.placedApps.any((placed) => placed.id == item.id) ?? false;
       if (!onHome) {
         entries.add(
           HomeAppMenuEntry(
@@ -502,7 +510,47 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
           ),
         );
       }
-    } else if (grid?.drawer ?? false) {
+    } else if (inDock) {
+      final dock = grid?.dock ?? const <HomeGridItem>[];
+      final position = dock.indexWhere((placed) => placed.id == item.id);
+      if (position > 0) {
+        entries.add(
+          HomeAppMenuEntry(
+            label: l10n.homeAppMenuMoveLeft,
+            icon: Icons.west_rounded,
+            onSelected: () => gridController.moveInDock(item, -1),
+          ),
+        );
+      }
+      if (position >= 0 && position < dock.length - 1) {
+        entries.add(
+          HomeAppMenuEntry(
+            label: l10n.homeAppMenuMoveRight,
+            icon: Icons.east_rounded,
+            onSelected: () => gridController.moveInDock(item, 1),
+          ),
+        );
+      }
+      entries.add(
+        HomeAppMenuEntry(
+          label: l10n.homeAppMenuRemoveFromDock,
+          icon: Icons.remove_circle_outline_rounded,
+          onSelected: () => gridController.removeFromDock(item),
+        ),
+      );
+    } else {
+      if ((grid?.dock.length ?? HomeGridController.dockLimit) <
+          HomeGridController.dockLimit) {
+        entries.add(
+          HomeAppMenuEntry(
+            label: l10n.homeAppMenuAddToDock,
+            icon: Icons.dock_rounded,
+            onSelected: () => gridController.addToDock(item),
+          ),
+        );
+      }
+    }
+    if (!inDrawer && !inDock && (grid?.drawer ?? false)) {
       // Taking an app off home leaves it in the drawer, so only when there is one.
       entries.add(
         HomeAppMenuEntry(
@@ -524,7 +572,14 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     final grid = this.grid;
     final geometry = _geometry;
     if (grid == null || geometry == null) return false;
-    final cell = geometry.cellAt(globalToGrid(global), grid.page);
+    final point = globalToGrid(global);
+    if (geometry.rows >= 2 &&
+        geometry
+            .dockRects(grid.dock.length)
+            .any((rect) => rect.inflate(geometry.gap / 2).contains(point))) {
+      return true;
+    }
+    final cell = geometry.cellAt(point, grid.page);
     return cell != null &&
         HomeGridLayout.anchorForCell(cell, grid.slots) != null;
   }
@@ -569,7 +624,11 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
         if (mounted) gridController.setPage(last);
       });
     }
-    // Rows are known now: items the bottom row cannot take move up.
+    // Rows are known now: the dock takes the bottom row's apps once, before
+    // items the bottom row cannot take move up.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) gridController.migrateDock();
+    });
     if (!identical(HomeGridLayout.conform(grid.slots), grid.slots)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) gridController.conform();
@@ -763,6 +822,16 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       }
     }
 
+    final dockRects = geometry.dockRects(grid.dock.length);
+    for (var position = 0; position < grid.dock.length; position++) {
+      final app = grid.dock[position];
+      if (shows(app)) {
+        return HomeIconTarget(
+          item: app,
+          rect: gridToGlobal(HomeTileMetrics.iconRectIn(dockRects[position])),
+        );
+      }
+    }
     for (var index = 0; index < grid.slots.length; index++) {
       final item = grid.slots[index];
       if (item == null || !geometry.shows(index, grid.page)) continue;
@@ -785,6 +854,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   List<HomeGridItem?>? _contentSlots;
   bool? _contentError;
   ({int pages, bool shared})? _contentPages;
+  List<HomeGridItem>? _contentDock;
 
   /// The same grid widget while its slots hold: visibility, interactivity and
   /// opacity changes then rebuild only the wrappers above it, not each tile.
@@ -792,12 +862,15 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     List<HomeGridItem?>? slots,
     bool hasError,
     ({int pages, bool shared}) pages,
+    List<HomeGridItem> dock,
   ) {
     if (_content == null ||
         !identical(slots, _contentSlots) ||
+        !identical(dock, _contentDock) ||
         hasError != _contentError ||
         pages != _contentPages) {
       _contentSlots = slots;
+      _contentDock = dock;
       _contentError = hasError;
       _contentPages = pages;
       _content = HomeInteractionScope(
@@ -809,6 +882,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
               padding: _contentPadding,
               child: HomePager(
                 slots: slots,
+                dock: dock,
                 hasError: hasError,
                 pages: pages.pages,
                 sharedBottomRow: pages.shared,
@@ -843,6 +917,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
           pages: value.asData?.value.pages ?? 0,
           shared: value.asData?.value.sharedBottomRow ?? false,
           drawer: value.asData?.value.drawer ?? false,
+          dock: value.asData?.value.dock ?? const <HomeGridItem>[],
         ),
       ),
     );
@@ -852,7 +927,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     final grid = _contentFor(contents.slots, contents.hasError, (
       pages: contents.pages,
       shared: contents.shared,
-    ));
+    ), contents.dock);
     // The editor shows the pages itself.
     final shown = AnimatedOpacity(
       opacity: _editing ? 0 : 1,

@@ -21,6 +21,9 @@ abstract interface class HomeInteractions {
 
   void openFolder(HomeGridItem folder, Rect iconRect);
 
+  /// A long press on [app] in the dock.
+  void holdDockApp(HomeGridItem app);
+
   /// A long press on [item], anchored at [index] (or held in the folder
   /// at [index]), whose tile is at [tileRect] in global coordinates.
   void hold(

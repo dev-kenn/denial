@@ -9466,6 +9466,30 @@ abstract class AppLocalizations {
   /// **'Uninstall'**
   String get homeAppMenuUninstall;
 
+  /// Home app menu: moves the held app into the dock.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to dock'**
+  String get homeAppMenuAddToDock;
+
+  /// Home app menu: moves the held dock app back to the home grid.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from dock'**
+  String get homeAppMenuRemoveFromDock;
+
+  /// Home app menu: moves the held dock app one place to the left.
+  ///
+  /// In en, this message translates to:
+  /// **'Move left'**
+  String get homeAppMenuMoveLeft;
+
+  /// Home app menu: moves the held dock app one place to the right.
+  ///
+  /// In en, this message translates to:
+  /// **'Move right'**
+  String get homeAppMenuMoveRight;
+
   /// App drawer menu: puts the held app on the home screen.
   ///
   /// In en, this message translates to:

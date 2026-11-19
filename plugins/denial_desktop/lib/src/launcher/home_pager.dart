@@ -7,6 +7,7 @@ import 'package:denial_flutter_sdk/motion.dart' show SelectedListenable;
 
 import 'home_grid_geometry.dart';
 import 'home_interactions.dart';
+import 'widgets/home_dock.dart';
 import 'widgets/home_empty_state.dart';
 import 'widgets/home_grid_page.dart';
 import 'widgets/page_dots.dart';
@@ -16,6 +17,7 @@ class HomePager extends StatefulWidget {
   const HomePager({
     super.key,
     required this.slots,
+    this.dock = const [],
     required this.hasError,
     required this.pages,
     required this.sharedBottomRow,
@@ -27,6 +29,9 @@ class HomePager extends StatefulWidget {
 
   /// Null while the grid loads.
   final List<HomeGridItem?>? slots;
+
+  /// The apps in the dock under the grid.
+  final List<HomeGridItem> dock;
   final bool hasError;
 
   /// Pages the user made: [HomeGridLayout.pageCount].
@@ -111,6 +116,8 @@ class _HomePagerState extends State<HomePager> {
         HomeGridLayout.columns = geometry.columns;
         HomeGridLayout.rows = geometry.rows;
         HomeGridLayout.sharedBottomRow = geometry.sharedBottomRow;
+        // The bottom row is the dock's, whether or not it is shared.
+        HomeGridLayout.dockReserved = geometry.rows >= 2;
         widget.onLayout(geometry);
 
         final slots = widget.slots;
@@ -180,7 +187,15 @@ class _HomePagerState extends State<HomePager> {
                 key: widget.viewportKey,
                 width: double.infinity,
                 height: geometry.height,
-                child: content,
+                child: slots != null && geometry.rows >= 2
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          content,
+                          HomeDock(apps: widget.dock, geometry: geometry),
+                        ],
+                      )
+                    : content,
               ),
             ),
             if (slots != null)
