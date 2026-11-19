@@ -1589,6 +1589,8 @@
   "colorTuningPresets": "预设",
   "moveToMonitor": "移到显示器",
   "homeAppMenuUninstall": "卸载",
+  "homeAppMenuAddToHome": "添加到主屏幕",
+  "homeDrawerSearchHint": "搜索应用",
   "homeAppMenuRemove": "移除",
   "homeAppMenuTerminate": "强制结束",
   "homeAppMenuUninstallPrompt": "要卸载{name}吗？此操作无法撤销。",

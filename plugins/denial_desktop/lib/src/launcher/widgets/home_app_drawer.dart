@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 
 import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/effects.dart';
+import 'package:denial_flutter_sdk/input.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/tokens.dart';
 
+import '../../widgets/edge_panel_layer.dart';
 import '../home_grid_geometry.dart';
 import 'home_app_tile.dart';
 import 'home_tiles.dart';
@@ -22,6 +24,7 @@ class HomeAppDrawer extends StatefulWidget {
     required this.apps,
     required this.columns,
     required this.onLaunch,
+    required this.onHold,
     required this.onDrag,
     required this.onDragEnd,
   });
@@ -32,6 +35,9 @@ class HomeAppDrawer extends StatefulWidget {
 
   /// Opens an app from its icon, in global coordinates.
   final void Function(HomeGridItem app, Rect iconRect) onLaunch;
+
+  /// A long press on an app.
+  final ValueChanged<HomeGridItem> onHold;
 
   /// Downward travel, in logical pixels.
   final ValueChanged<double> onDrag;
@@ -56,8 +62,45 @@ class _HomeAppDrawerState extends State<HomeAppDrawer> {
 
   late final _physics = _SheetPullPhysics(pulling: () => _pulling);
 
+  /// What the search field holds; the list shows the apps whose names have it.
+  final _query = TextEditingController();
+  final _searchFocus = FocusNode();
+
+  /// The drawer is on screen: while it is, the search field takes the keys.
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _query.addListener(_queryChanged);
+    widget.openness.addListener(_opennessChanged);
+  }
+
+  @override
+  void didUpdateWidget(HomeAppDrawer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.openness != widget.openness) {
+      oldWidget.openness.removeListener(_opennessChanged);
+      widget.openness.addListener(_opennessChanged);
+    }
+  }
+
+  void _queryChanged() => setState(() {});
+
+  /// Closed, the drawer forgets the search and lets go of the keyboard.
+  void _opennessChanged() {
+    final shown = widget.openness.value != 0;
+    if (shown != _shown) setState(() => _shown = shown);
+    if (shown) return;
+    if (_query.text.isNotEmpty) _query.clear();
+    if (_searchFocus.hasFocus) _searchFocus.unfocus();
+  }
+
   @override
   void dispose() {
+    widget.openness.removeListener(_opennessChanged);
+    _query.dispose();
+    _searchFocus.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -99,8 +142,12 @@ class _HomeAppDrawerState extends State<HomeAppDrawer> {
       for (final app in widget.apps)
         app: HomeAppTile.nameOf(context, app).toLowerCase(),
     };
-    final apps = names.keys.toList()
-      ..sort((a, b) => names[a]!.compareTo(names[b]!));
+    final query = _query.text.trim().toLowerCase();
+    final apps =
+        names.keys
+            .where((app) => query.isEmpty || names[app]!.contains(query))
+            .toList()
+          ..sort((a, b) => names[a]!.compareTo(names[b]!));
     return AnimatedBuilder(
       animation: widget.openness,
       builder: (context, sheet) {
@@ -125,33 +172,58 @@ class _HomeAppDrawerState extends State<HomeAppDrawer> {
           // Dark like the wallpaper under home: the labels are white.
           child: ColoredBox(
             color: ShellMediaColors.darkness.withValues(alpha: 0.55),
-            child: Listener(
-              onPointerDown: _down,
-              onPointerMove: _move,
-              onPointerUp: _up,
-              onPointerCancel: _up,
-              child: GridView.builder(
-                controller: _scroll,
-                physics: _physics,
-                padding: EdgeInsets.fromLTRB(
-                  20,
-                  padding.top + 72,
-                  20,
-                  padding.bottom + 72,
+            child: Stack(
+              children: [
+                Listener(
+                  onPointerDown: _down,
+                  onPointerMove: _move,
+                  onPointerUp: _up,
+                  onPointerCancel: _up,
+                  child: GridView.builder(
+                    controller: _scroll,
+                    physics: _physics,
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      padding.top + 72,
+                      20,
+                      padding.bottom + 72 + 64,
+                    ),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: widget.columns,
+                      mainAxisExtent: HomeGridLayout.minTileHeight,
+                      mainAxisSpacing: 18,
+                      crossAxisSpacing: HomeGridLayout.gridGap,
+                    ),
+                    itemCount: apps.length,
+                    itemBuilder: (context, index) => _DrawerTile(
+                      key: ValueKey(apps[index].id),
+                      app: apps[index],
+                      onLaunch: widget.onLaunch,
+                      onHold: widget.onHold,
+                    ),
+                  ),
                 ),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: widget.columns,
-                  mainAxisExtent: HomeGridLayout.minTileHeight,
-                  mainAxisSpacing: 18,
-                  crossAxisSpacing: HomeGridLayout.gridGap,
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  bottom: padding.bottom + 16,
+                  // The keyboard is a panel over the screen, so the field
+                  // rides above it, and its bounds ride with it.
+                  child: KeyboardRide(
+                    clearance: padding.bottom + 16,
+                    child: ShellInputRegion(
+                      debugLabel: 'App drawer search',
+                      active: _shown,
+                      keyboardPolicy: ShellKeyboardPolicy.capture,
+                      child: _SearchField(
+                        controller: _query,
+                        focusNode: _searchFocus,
+                        hint: context.l10n.homeDrawerSearchHint,
+                      ),
+                    ),
+                  ),
                 ),
-                itemCount: apps.length,
-                itemBuilder: (context, index) => _DrawerTile(
-                  key: ValueKey(apps[index].id),
-                  app: apps[index],
-                  onLaunch: widget.onLaunch,
-                ),
-              ),
+              ],
             ),
           ),
         ),
@@ -185,16 +257,61 @@ class _SheetPullPhysics extends ClampingScrollPhysics {
   ) => pulling() ? null : super.createBallisticSimulation(position, velocity);
 }
 
+/// The search field at the bottom of the drawer.
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.focusNode,
+    required this.hint,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      autocorrect: false,
+      enableSuggestions: false,
+      textInputAction: TextInputAction.search,
+      style: const TextStyle(color: Colors.white, fontSize: 17),
+      cursorColor: Colors.white,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.white60),
+        prefixIcon: const Icon(Icons.search_rounded, color: Colors.white70),
+        filled: true,
+        fillColor: Colors.black.withValues(alpha: 0.45),
+        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(28),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+}
+
 class _DrawerTile extends StatelessWidget {
-  const _DrawerTile({super.key, required this.app, required this.onLaunch});
+  const _DrawerTile({
+    super.key,
+    required this.app,
+    required this.onLaunch,
+    required this.onHold,
+  });
 
   final HomeGridItem app;
   final void Function(HomeGridItem app, Rect iconRect) onLaunch;
+  final ValueChanged<HomeGridItem> onHold;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onLongPress: () => onHold(app),
       onTap: () {
         final box = context.findRenderObject();
         if (box is! RenderBox || !box.hasSize) return;

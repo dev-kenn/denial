@@ -5312,6 +5312,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeAppMenuUninstall => 'Uninstall';
 
   @override
+  String get homeAppMenuAddToHome => 'Add to home screen';
+
+  @override
+  String get homeDrawerSearchHint => 'Search apps';
+
+  @override
   String get homeAppMenuRemove => 'Remove';
 
   @override

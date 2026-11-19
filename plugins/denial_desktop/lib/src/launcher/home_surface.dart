@@ -420,7 +420,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
 
   /// Opens the menu of [item]: its desktop actions, then Terminate when it is
   /// running and Uninstall when a package owns it.
-  Future<void> _openAppMenu(HomeGridItem item) async {
+  Future<void> _openAppMenu(HomeGridItem item, {bool inDrawer = false}) async {
     final app = item.app;
     if (app == null) return;
     ref.read(hapticsServiceProvider).pulse();
@@ -490,8 +490,20 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
         );
       }
     }
-    // Taking an app off home leaves it in the drawer, so only when there is one.
-    if (grid?.drawer ?? false) {
+    if (inDrawer) {
+      // An app already on home cannot be added twice.
+      final onHome = grid?.apps.any((placed) => placed.id == item.id) ?? false;
+      if (!onHome) {
+        entries.add(
+          HomeAppMenuEntry(
+            label: l10n.homeAppMenuAddToHome,
+            icon: Icons.add_to_home_screen_rounded,
+            onSelected: () => gridController.showOnHome(item),
+          ),
+        );
+      }
+    } else if (grid?.drawer ?? false) {
+      // Taking an app off home leaves it in the drawer, so only when there is one.
       entries.add(
         HomeAppMenuEntry(
           label: l10n.homeAppMenuRemove,
@@ -884,6 +896,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                     apps: apps,
                     columns: _geometry!.columns,
                     onLaunch: _launchFromDrawer,
+                    onHold: (item) => _openAppMenu(item, inDrawer: true),
                     onDrag: _moveDrawer,
                     onDragEnd: _settleDrawer,
                   ),

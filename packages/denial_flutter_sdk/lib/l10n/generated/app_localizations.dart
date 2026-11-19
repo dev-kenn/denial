@@ -9472,6 +9472,18 @@ abstract class AppLocalizations {
   /// **'Uninstall'**
   String get homeAppMenuUninstall;
 
+  /// App drawer menu: puts the held app on the home screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to home screen'**
+  String get homeAppMenuAddToHome;
+
+  /// Hint of the app drawer's search field, which filters the apps by name.
+  ///
+  /// In en, this message translates to:
+  /// **'Search apps'**
+  String get homeDrawerSearchHint;
+
   /// Home app menu: takes the held app off the home screen; it stays in the app drawer.
   ///
   /// In en, this message translates to:

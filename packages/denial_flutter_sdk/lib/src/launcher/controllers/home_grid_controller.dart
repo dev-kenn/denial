@@ -466,6 +466,26 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
     _save(slots, state: next);
   }
 
+  /// Puts a hidden [item] back on the home screen, in the first free cell.
+  void showOnHome(HomeGridItem item) {
+    final current = state.asData?.value;
+    final app = item.app;
+    if (current == null ||
+        app == null ||
+        !_hiddenIds.contains(item.id) ||
+        current.apps.any((placed) => placed.id == item.id)) {
+      return;
+    }
+    _hiddenIds = {..._hiddenIds}..remove(item.id);
+    final slots = HomeGridLayout.placeItemInFirstFreeSlot(
+      current.slots,
+      HomeGridItem.app(app),
+    );
+    final next = current.copyWith(slots: slots, hidden: _hiddenItems(_apps));
+    state = AsyncData(next);
+    _save(slots, state: next);
+  }
+
   /// Adds an empty page after the last.
   void addPage(int pageSize) {
     final current = state.asData?.value;
