@@ -1919,7 +1919,9 @@ fn process_input_event(
         state.note_user_activity();
     }
 
-    // New windows open where the user last pressed: the phone or a desk.
+    // New windows open on the screen the user last used: the phone or a desk.
+    // A touch or a button press counts, and so does moving the pointer onto a
+    // screen, so an app launched from the keyboard opens where the mouse is.
     #[cfg(feature = "flutter")]
     if let Some(frontend) = state.wayland.as_mut() {
         let output = match &event {
@@ -1929,6 +1931,9 @@ fn process_input_event(
             InputEvent::PointerButton { event, .. }
                 if event.state() == smithay::backend::input::ButtonState::Pressed =>
             {
+                frontend.output_id_at(frontend.pointer_location)
+            }
+            InputEvent::PointerMotion { .. } | InputEvent::PointerMotionAbsolute { .. } => {
                 frontend.output_id_at(frontend.pointer_location)
             }
             _ => None,
